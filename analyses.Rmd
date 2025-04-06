@@ -1,0 +1,133 @@
+---
+title: "Study title"
+author: "Your name, supervisor 1, supervisor 2, etc"
+date: "Today's date"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+    theme: cerulean
+    highlight: pygments
+editor_options:
+  chunk_output_type: console
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding=encoding, output_file=file.path(dirname(inputFile), 'tutorial.html')) })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, eval=TRUE)
+```
+
+**Note:** This template includes some basic structure to help you build your analyses, but won't run since it doesn't know what your data looks like yet!
+
+# Background
+
+*Write something here to introduce your project, your dataset, and how you plan to analyse it.*
+
+# Setup
+
+We used the [pacman Package Management Tool](https://cran.r-project.org/web/packages/pacman/index.html) to install and load subsequent packages in a condensed and efficient way.
+
+```{r, eval=FALSE}
+# Install pacman (do once per computer)
+install.packages("pacman")
+```
+
+```{r, results='hide', warning=FALSE, message=FALSE}
+# Install and load required packages
+pacman::p_load(ggplot2, ggpubr, janitor, lme4, lubridate, readr, readxl, sf, sp, tidyverse, viridis)
+```
+
+# Data preparation
+
+First, we read in our data.
+
+```{r,  warning=FALSE, message=FALSE}
+# Read in data
+data <- read_excel("input/raw data.xlsx", sheet="Sheet1") %>%
+  # Change column names so they are in lower case and multiple words are
+  # separated with underscores
+  clean_names() %>%
+  # Create a date column and tell R to recognise it as a date
+  mutate(date=as.Date(start_time))
+
+# Save the processed data as a new file
+write.csv(data, "output/processed data.csv")
+```
+
+Next, we explore the data.
+
+```{r}
+# Look at first 6 rows of the data
+head(data)
+
+# Look at last 6 rows of the data
+tail(data)
+
+# Look at the structure of the data
+str(data)
+
+# Look at the column names
+names(data)
+
+# Look at unique values for a single column
+unique(data$site)
+
+# Find out how many rows there are in the data
+nrow(data)
+```
+
+We plotted our continuous data.
+
+```{r}
+# Map points
+plot <- ggplot(data=data, aes(x=column_1, y=column_2)) + 
+  # Add the spatial features (points) to the plot
+  geom_smooth() +
+  # Remove grey background
+  theme_minimal() + 
+  # Use red-green colourblind friendly colours
+  scale_colour_manual(values=viridis()) + 
+  # Add x and y axis labels
+  xlab("Column 1") + ylab(" Column 2")
+
+# Display the plot
+print(plot)
+```
+
+```{r, eval=FALSE, include=FALSE}
+# Save the plot as a jpeg
+ggsave(plot=plot, "output/plot.jpeg", 
+       height=6, width=12, dpi=300)
+```
+
+# Models
+
+Here we test our hypotheses by fitting generalised linear models (GLMs). The benefit of GLMs is they can deal with such categorical predictors, are relatively easy to interpret, and are robust against overfitting. However, they are sensitive to outliers, and can’t deal with presence-only data.
+
+```{r}
+# Fit a GLM
+mod <- glm(response_1 ~ predictor_2 + predictor_3, data=data)
+
+# Display summary statistics
+summary(mod)
+```
+
+If the `Pr(>|t|)` (or *p*-value) for a predictor is <0.05, it *significantly* affected the response. 
+
+# Plots
+
+Here we plot our significant results.
+
+```{r}
+# Plot 
+```
+
+# Session information
+
+```{r}
+# Display version information for R, OS, and packages
+sessionInfo()
+```
