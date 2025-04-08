@@ -18,116 +18,179 @@ knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding=enc
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE, eval=TRUE)
-```
 
-**Note:** This template includes some basic structure to help you build your analyses, but won't run since it doesn't know what your data looks like yet!
+pacman::p_load(broom, pROC, pwr, tidyverse)
+```
 
 # Background
 
-*Write something here to introduce your project, your dataset, and how you plan to analyse it.*
 
-# Setup
 
-We used the [pacman Package Management Tool](https://cran.r-project.org/web/packages/pacman/index.html) to install and load subsequent packages in a condensed and efficient way.
+# Power Analysis
 
-```{r, eval=FALSE}
-# Install pacman (do once per computer)
-install.packages("pacman")
-```
+## Dog only 
 
-```{r, results='hide', warning=FALSE, message=FALSE}
-# Install and load required packages
-pacman::p_load(ggplot2, ggpubr, janitor, lme4, lubridate, readr, readxl, sf, sp, tidyverse, viridis)
-```
-
-# Data preparation
-
-First, we read in our data.
-
-```{r,  warning=FALSE, message=FALSE}
-# Read in data
-data <- read_excel("input/raw data.xlsx", sheet="Sheet1") %>%
-  # Change column names so they are in lower case and multiple words are
-  # separated with underscores
-  clean_names() %>%
-  # Create a date column and tell R to recognise it as a date
-  mutate(date=as.Date(start_time))
-
-# Save the processed data as a new file
-write.csv(data, "output/processed data.csv")
-```
-
-Next, we explore the data.
+How many trials needed to determine dog performs better than sensitivity 0.5 (chance). 
 
 ```{r}
-# Look at first 6 rows of the data
-head(data)
+# Function to calculate required sample size for proportion test
+dog_sensitivity_power <- function(
+  target_sensitivity = 0.8,   # Expected sensitivity (true positive rate)
+  null_sensitivity = 0.5,     # Null hypothesis value (typically 0.5 for chance)
+  power = 0.8,               # Desired power (typically 0.8)
+  alpha = 0.05,              # Significance level
+  alternative = "greater"    # Usually one-sided test for sensitivity
+) {
+  
+  # Effect size calculation (h) for proportion test
+  h <- ES.h(p1 = target_sensitivity, p2 = null_sensitivity)
+  
+  # Calculate required sample size using pwr.p.test
+  result <- pwr.p.test(h = h, 
+                     sig.level = alpha, 
+                     power = power,
+                     alternative = alternative)
+  
+  # Return sample size (rounded up)
+  return(ceiling(result$n))
+}
 
-# Look at last 6 rows of the data
-tail(data)
+# Create a function to explore different sensitivity scenarios
+sensitivity_scenarios <- function(
+  sensitivities = seq(0.7, 0.95, by = 0.05),
+  null_values = c(0.5),
+  power_values = c(0.8),
+  alpha = 0.05
+) {
+  
+  # Create a grid of all combinations
+  scenarios <- expand_grid(
+    target_sensitivity = sensitivities,
+    null_sensitivity = null_values,
+    power = power_values,
+    alpha = alpha
+  )
+  
+  # Calculate required sample size for each combination
+  scenarios <- scenarios %>%
+    rowwise() %>%
+    mutate(sample_size = dog_sensitivity_power(
+      target_sensitivity = target_sensitivity,
+      null_sensitivity = null_sensitivity,
+      power = power,
+      alpha = alpha
+    )) %>%
+    ungroup()
+  
+  return(scenarios)
+}
 
-# Look at the structure of the data
-str(data)
+# Generate scenarios
+scenarios <- sensitivity_scenarios()
 
-# Look at the column names
-names(data)
-
-# Look at unique values for a single column
-unique(data$site)
-
-# Find out how many rows there are in the data
-nrow(data)
+# Plot
+ggplot(scenarios, 
+       aes(x = target_sensitivity, y = sample_size, label  = sample_size)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_text(hjust = -1, vjust = -0.1)+
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Required Sample Size for Detection Dog Sensitivity Testing",
+    subtitle = "Compared to sensitivity 0.5 (chance)",
+    x = "Target Sensitivity",
+    y = "Required Number of Trials") +
+  theme_minimal()
 ```
 
-We plotted our continuous data.
+## Dog and human
+
+How many trials needed to determine dog performs better than human. 
 
 ```{r}
-# Map points
-plot <- ggplot(data=data, aes(x=column_1, y=column_2)) + 
-  # Add the spatial features (points) to the plot
-  geom_smooth() +
-  # Remove grey background
-  theme_minimal() + 
-  # Use red-green colourblind friendly colours
-  scale_colour_manual(values=viridis()) + 
-  # Add x and y axis labels
-  xlab("Column 1") + ylab(" Column 2")
+compare_sensitivity_power <- function(
+  dog_sensitivity = 0.8,    # Expected dog sensitivity
+  human_sensitivity = 0.3,  # Expected human sensitivity
+  power = 0.8,              # Desired power (typically 0.8)
+  alpha = 0.05,             # Significance level
+  alternative = "greater"   # Usually one-sided test for dog > human
+) {
+  
+  # Effect size calculation (h) for proportion test
+  h <- ES.h(p1 = dog_sensitivity, p2 = human_sensitivity)
+  
+  # Calculate required sample size using pwr.2p.test
+  # This function is for two proportions with equal sample sizes
+  result <- pwr.2p.test(h = h, 
+                        n = NULL,
+                        sig.level = alpha, 
+                        power = power,
+                        alternative = alternative)
+  
+  # Return sample size (rounded up)
+  # For pwr.2p.test, n1 = n2 = n (equal sample sizes)
+  sample_size = ceiling(result$n)
+  
+  return(list(
+    n1 = sample_size,  # Dog sample size
+    n2 = sample_size   # Human sample size
+  ))
+}
 
-# Display the plot
-print(plot)
+# Create a function to explore different comparison scenarios
+comparison_scenarios <- function(
+  dog_sensitivities = seq(0.7, 0.9, by = 0.1),
+  human_sensitivities = seq(0.1, 0.4, by = 0.1),
+  power_values = c(0.8),
+  alpha = 0.05
+) {
+  
+  # Create a grid of all combinations
+  scenarios <- expand_grid(
+    dog_sensitivity = dog_sensitivities,
+    human_sensitivity = human_sensitivities,
+    power = power_values,
+    alpha = alpha
+  )
+  
+  # Calculate required sample size for each combination
+  scenarios <- scenarios %>%
+    rowwise() %>%
+    mutate(
+      sample_result = list(compare_sensitivity_power(
+        dog_sensitivity = dog_sensitivity,
+        human_sensitivity = human_sensitivity,
+        power = power,
+        alpha = alpha
+      )),
+      dog_sample = sample_result$n1,
+      human_sample = sample_result$n2
+    ) %>%
+    select(-sample_result) %>%
+    ungroup()
+  
+  return(scenarios)
+}
+
+# Generate dog vs human comparison scenarios
+comparison <- comparison_scenarios()
+
+# Create a visualization of the comparison scenarios
+ggplot(comparison, 
+       aes(x = human_sensitivity, y = dog_sample, label = dog_sample))+
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_text(hjust = 1.5, vjust = -0.5)+
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  xlim(c(0.05, 0.45))+
+  labs(
+    title = "Required Sample Size for Dog vs Human Sensitivity Comparison",
+    subtitle = "Facet grouped by dog sensitivity",
+    x = "Human Sensitivity",
+    y = "Required Number of Trials (per group)",
+    colour = "Human Sensitivity",
+    linetype = "Statistical Power"
+  ) +
+  theme_bw()+
+  facet_wrap(~dog_sensitivity)
 ```
 
-```{r, eval=FALSE, include=FALSE}
-# Save the plot as a jpeg
-ggsave(plot=plot, "output/plot.jpeg", 
-       height=6, width=12, dpi=300)
-```
-
-# Models
-
-Here we test our hypotheses by fitting generalised linear models (GLMs). The benefit of GLMs is they can deal with such categorical predictors, are relatively easy to interpret, and are robust against overfitting. However, they are sensitive to outliers, and can’t deal with presence-only data.
-
-```{r}
-# Fit a GLM
-mod <- glm(response_1 ~ predictor_2 + predictor_3, data=data)
-
-# Display summary statistics
-summary(mod)
-```
-
-If the `Pr(>|t|)` (or *p*-value) for a predictor is <0.05, it *significantly* affected the response. 
-
-# Plots
-
-Here we plot our significant results.
-
-```{r}
-# Plot 
-```
-
-# Session information
-
-```{r}
-# Display version information for R, OS, and packages
-sessionInfo()
-```
