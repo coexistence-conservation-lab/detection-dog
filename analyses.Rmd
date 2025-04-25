@@ -27,16 +27,12 @@ pacman::p_load(broom, pROC, pwr, tidyverse)
 
 ## Dog only 
 
-How many trials needed to determine dog performs better than sensitivity 0.5?
-
-Premise being if the dog finds it 50% of the time it could be chance. 
-
-However, since human searches are successful <50% of the time, 0.5 might not be the right null hypothesis value. But an okay place to start. 
+How many trials needed to determine dog performs better than sensitivity 0.5? Sensitivity at which the dog is a worthwhile approach will depend on the application. For some purposes, such as medical detection or law enforcement, sensitivity may need to be >0.9. Whereas other applications, such as detection of scats, missing some and a sensitivity of 0.5 may be appropriate. 
 
 ```{r}
 # Function to calculate required sample size for proportion test
 dog_sensitivity_power <- function(
-  target_sensitivity = 0.8,   # Predicted sensitivity (true positive rate)
+  target_sensitivity = 0.9,   # Predicted sensitivity (true positive rate)
   null_sensitivity = 0.5,     # Null hypothesis value 
   power = 0.8,               # Desired power
   alpha = 0.05,              # Significance level
@@ -109,7 +105,7 @@ How many trials needed to determine dog performs better than human?
 
 This is probably the better way to go, because the purpose of the study is to demonstrate that the dog is better than alternative methods - which in this case is human search. In other dog studies alternative methods might be, for example, live trapping or thermal camera imaging. 
 
-Requires estimation of expected true positive rate for the dog and the human. To date, Koda's sensitivty is around 80%. Harder to estimate for the human but lower than 50% is realistic. 
+Requires estimation of expected true positive rate for the dog and the human. To date, Koda's sensitivity is around 80%. Harder to estimate for the human but lower than 50% (and in fact close to zero) is realistic. 
 
 ```{r}
 compare_sensitivity_power <- function(
