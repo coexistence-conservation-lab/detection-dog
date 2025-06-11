@@ -19,7 +19,7 @@ knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding=enc
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE, eval=TRUE)
 
-pacman::p_load(broom, caret, emmeans, ggbeeswarm2, janitor, pROC, pwr, readxl, tidyverse)
+pacman::p_load(broom, caret, emmeans, ggbeeswarm2, plotrix, janitor, pROC, pwr, readxl, tidyverse)
 ```
 
 # Introduction
@@ -289,6 +289,15 @@ times <- rbind(dog_time, human_time) %>%
 # one sided t test
 m1 <- t.test(time ~ type, data = times, alternative = "less")
 m1
+
+# approx 95% conf intervals using t distribution
+conf <- times %>%
+  group_by(type) %>%
+  summarise(mean = mean(time),
+            se = std.error(time),
+            n = length(time)) %>%
+  mutate(upper = (mean + qt(0.975, n-1) * se)/60,
+         lower = (mean - qt(0.975, n-1) * se)/60)
 ```
 
 Yes, the dog is significantly faster (p < 0.0001).
