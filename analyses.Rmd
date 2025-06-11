@@ -19,9 +19,10 @@ knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding=enc
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE, eval=TRUE)
 
-pacman::p_load(broom, pROC, pwr, tidyverse)
+pacman::p_load(broom, caret, emmeans, ggbeeswarm2, janitor, pROC, pwr, readxl, tidyverse)
 ```
 
+# Introduction
 
 # Power Analysis
 
@@ -54,7 +55,7 @@ dog_sensitivity_power <- function(
 
 # Create a function to explore different sensitivity scenarios
 sensitivity_scenarios <- function(
-  sensitivities = seq(0.7, 0.95, by = 0.05),
+  sensitivities = seq(0.7, 1, by = 0.05),
   null_values = c(0.5),
   power_values = c(0.8),
   alpha = 0.05
@@ -105,12 +106,12 @@ How many trials needed to determine dog performs better than human?
 
 This is probably the better way to go, because the purpose of the study is to demonstrate that the dog is better than alternative methods - which in this case is human search. In other dog studies alternative methods might be, for example, live trapping or thermal camera imaging. 
 
-Requires estimation of expected true positive rate for the dog and the human. To date, Koda's sensitivity is around 80%. Harder to estimate for the human but lower than 50% (and in fact close to zero) is realistic. 
+Originally estimated at 80% for Koda and 30% for human, result of field trial was 100% for Koda and 40% for human.
 
 ```{r}
 compare_sensitivity_power <- function(
-  dog_sensitivity = 0.8,    # Expected dog sensitivity
-  human_sensitivity = 0.3,  # Expected human sensitivity
+  dog_sensitivity = 1,    # Expected dog sensitivity
+  human_sensitivity = 0.4,  # Expected human sensitivity
   power = 0.8,              # Desired power )
   alpha = 0.05,             # Significance level
   alternative = "greater"   # One-sided dog > human
@@ -139,8 +140,8 @@ compare_sensitivity_power <- function(
 
 # Create a function to explore different comparison scenarios
 comparison_scenarios <- function(
-  dog_sensitivities = seq(0.7, 0.9, by = 0.1),
-  human_sensitivities = seq(0.1, 0.4, by = 0.1),
+  dog_sensitivities = seq(0.7, 1, by = 0.1),
+  human_sensitivities = seq(0.2, 0.5, by = 0.1),
   power_values = c(0.8),
   alpha = 0.05
 ) {
@@ -182,7 +183,8 @@ ggplot(comparison,
   geom_point(size = 3) +
   geom_text(hjust = 1.5, vjust = -0.5)+
   scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
-  xlim(c(0.05, 0.45))+
+  xlim(c(0.15, 0.55))+
+  ylim(c(0, 80))+
   labs(
     title = "Required Sample Size for Dog vs Human Sensitivity Comparison",
     subtitle = "Facet grouped by dog sensitivity",
@@ -194,3 +196,116 @@ ggplot(comparison,
   theme_bw()+
   facet_wrap(~dog_sensitivity)
 ```
+
+# Statistics
+
+## Summary stats
+
+What were the sensitivity, precision and efficiency of the dog and human? Create confusion matrix to report results.
+
+Definitions:
+
+* Sensitivity: proportion of targets found relative to total number available
+* Precision: proportion of alerts directed to a true target
+* Efficiency: performance per unit effort
+
+```{r}
+# dog results, matrix and summary
+dog_results <- read_xlsx("detection field test data.xlsx", sheet = "dog") %>%
+  clean_names() %>%
+  # convert NA strings to NAs
+  mutate(across(where(is.character), ~na_if(., "NA"))) %>%
+  # create binary expected and real values
+  mutate(expected = as_factor(ifelse(type == "ABSENCE", 0, 1)),
+         real = as_factor(ifelse(found == "TRUE", 1, 0))) %>%
+  # omit excluded find, where "found" is NA
+  drop_na(found)
+
+dog_matrix <- confusionMatrix(data = dog_results$real, reference = dog_results$expected)
+
+# calculate search time for presence searches only
+search <- dog_results %>%
+  filter(type == "PRESENCE") %>%
+  summarise(mean = mean(search_time_s))
+
+dog_summary <- data.frame(
+  type = "dog",
+  sensitivity = dog_matrix$byClass[1],
+  precision = dog_matrix$byClass[5],
+  time = search$mean,
+  efficiency  = (dog_matrix$byClass[1]/search$mean)*1000,
+  row.names = NULL
+)
+
+# human results, matrix and summary
+human_results <- read_xlsx("detection field test data.xlsx", sheet = "human") %>%
+  clean_names() %>%
+  # convert NA strings to NAs
+  mutate(across(where(is.character), ~na_if(., "NA"))) %>%
+  # create binary real values
+  mutate(real = as_factor(ifelse(found == "TRUE", 1, 0)))
+
+human_matrix <- data.frame(
+    true_pos = sum(human_results$real == 1),
+    false_pos = 0,
+    true_neg = NA,
+    false_neg = sum(human_results$real == 0))
+
+human_summary <- human_matrix %>%
+  summarise(
+    type = "human",
+    sensitivity = true_pos / (true_pos + false_neg),
+    precision = true_pos / (true_pos + false_pos),
+    time = mean(human_results$search_time_s),
+    efficiency  = (sensitivity/mean(human_results$search_time_s))*1000
+  )
+
+# both results
+results <- rbind(dog_summary, human_summary) %>%
+  # time in minutes
+  mutate(time = time/60)
+
+results
+```
+
+## Time comparison
+
+Is the dog significantly faster than the human-only searches?
+
+```{r}
+# combine times dataframe
+dog_time <- dog_results %>%
+  filter(type == "PRESENCE") %>%
+  select(search_time_s) %>%
+  mutate(type = "dog")
+
+human_time <- human_results %>%
+  select(search_time_s) %>%
+  mutate(type = "human")
+
+times <- rbind(dog_time, human_time) %>%
+  rename(time = search_time_s)
+
+# one sided t test
+m1 <- t.test(time ~ type, data = times, alternative = "less")
+m1
+```
+
+Yes, the dog is significantly faster (p < 0.0001).
+
+Plot search times.
+
+```{r}
+ggplot(times, aes(type, time/60))+
+  geom_boxplot(aes(fill = type), alpha = 0.3, outlier.shape = NA)+
+  geom_beeswarm(aes(colour = type), spacing = 1, method = "compactswarm")+
+  scale_fill_manual(values = c("purple4", "seagreen4"), labels = c("Dog", "Human"))+
+  scale_colour_manual(values = c("purple4", "seagreen4"), labels = c("Dog", "Human"))+
+  ylab("Search time (min)")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")
+
+ggsave("search_times.png", height = 6, width = 6, units = "cm", dpi = 600)
+```
+
