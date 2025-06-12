@@ -19,7 +19,7 @@ knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding=enc
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE, eval=TRUE)
 
-pacman::p_load(broom, caret, emmeans, ggbeeswarm2, plotrix, janitor, pROC, pwr, readxl, tidyverse)
+pacman::p_load(broom, caret, ggbeeswarm2, plotrix, janitor, pROC, pwr, readxl, tidyverse)
 ```
 
 # Introduction
@@ -230,12 +230,16 @@ search <- dog_results %>%
 
 dog_summary <- data.frame(
   type = "dog",
+  # true positive rate
   sensitivity = dog_matrix$byClass[1],
+  # false positive rate
   precision = dog_matrix$byClass[5],
-  time = search$mean,
-  efficiency  = (dog_matrix$byClass[1]/search$mean)*1000,
+   # mean search time in minutes
+  time = search$mean/60,
   row.names = NULL
-)
+) %>% mutate(
+  # sensitivity divided by time, x 100 to be >0
+  efficiency  = sensitivity / time * 100)
 
 # human results, matrix and summary
 human_results <- read_xlsx("detection field test data.xlsx", sheet = "human") %>%
@@ -254,16 +258,18 @@ human_matrix <- data.frame(
 human_summary <- human_matrix %>%
   summarise(
     type = "human",
+    # true positive rate
     sensitivity = true_pos / (true_pos + false_neg),
+    # false positive rate
     precision = true_pos / (true_pos + false_pos),
-    time = mean(human_results$search_time_s),
-    efficiency  = (sensitivity/mean(human_results$search_time_s))*1000
+    # mean search time in minutes
+    time = mean(human_results$search_time_s)/60,
+    # sensitivity divided by time, x 100 to be >0
+    efficiency  = sensitivity / time * 100
   )
 
 # both results
-results <- rbind(dog_summary, human_summary) %>%
-  # time in minutes
-  mutate(time = time/60)
+results <- rbind(dog_summary, human_summary)
 
 results
 ```
