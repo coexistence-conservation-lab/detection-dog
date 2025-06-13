@@ -19,7 +19,7 @@ knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding=enc
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=TRUE, eval=TRUE)
 
-pacman::p_load(broom, caret, ggbeeswarm2, plotrix, janitor, pROC, pwr, readxl, tidyverse)
+pacman::p_load(broom, caret, ggbeeswarm2, patchwork, plotrix, janitor, pROC, pwr, readxl, tidyverse)
 ```
 
 # Introduction
@@ -209,9 +209,11 @@ Definitions:
 * Precision: proportion of alerts directed to a true target
 * Efficiency: performance per unit effort
 
+Calculate performance metrics for the dog-handler team.
+
 ```{r}
-# dog results, matrix and summary
-dog_results <- read_xlsx("detection field test data.xlsx", sheet = "dog") %>%
+# read in dog data
+dog_data <- read_xlsx("detection field test data.xlsx", sheet = "dog") %>%
   clean_names() %>%
   # convert NA strings to NAs
   mutate(across(where(is.character), ~na_if(., "NA"))) %>%
@@ -221,41 +223,58 @@ dog_results <- read_xlsx("detection field test data.xlsx", sheet = "dog") %>%
   # omit excluded find, where "found" is NA
   drop_na(found)
 
-dog_matrix <- confusionMatrix(data = dog_results$real, reference = dog_results$expected)
-
+# calculate true/false postive/negative results
+dog_results <- dog_data %>%
+  summarise(
+    type = "dog",
+    true_pos = sum(expected == 1 & real == 1),
+    false_pos = sum(expected == 0 & real == 1),
+    true_neg = sum(expected == 0 & real == 0),
+    false_neg = sum(expected == 1 & real == 0)
+    )
 # calculate search time for presence searches only
-search <- dog_results %>%
+search <- dog_data %>% 
   filter(type == "PRESENCE") %>%
   summarise(mean = mean(search_time_s))
 
-dog_summary <- data.frame(
-  type = "dog",
-  # true positive rate
-  sensitivity = dog_matrix$byClass[1],
-  # false positive rate
-  precision = dog_matrix$byClass[5],
-   # mean search time in minutes
-  time = search$mean/60,
-  row.names = NULL
-) %>% mutate(
-  # sensitivity divided by time, x 100 to be >0
-  efficiency  = sensitivity / time * 100)
+# summarise performance metrics
+dog_summary <- dog_results %>%
+  summarise(
+    type = "dog",
+    # true positive rate
+    sensitivity = true_pos / (true_pos + false_neg),
+    # false positive rate
+    precision = true_pos / (true_pos + false_pos),
+    # mean search time in minutes
+    time = search$mean/60,
+    # sensitivity divided by time, x 100 to be >0
+    efficiency  = sensitivity / time * 100
+  )
+```
 
-# human results, matrix and summary
-human_results <- read_xlsx("detection field test data.xlsx", sheet = "human") %>%
+Calculate performance metrics for the human-only searches.
+
+```{r}
+# read in human results
+human_data <- read_xlsx("detection field test data.xlsx", sheet = "human") %>%
   clean_names() %>%
   # convert NA strings to NAs
   mutate(across(where(is.character), ~na_if(., "NA"))) %>%
-  # create binary real values
-  mutate(real = as_factor(ifelse(found == "TRUE", 1, 0)))
+  # create binary expected (all positive) and real values
+  mutate(expected = as_factor(1),
+         real = as_factor(ifelse(found == "TRUE", 1, 0)))
 
-human_matrix <- data.frame(
-    true_pos = sum(human_results$real == 1),
-    false_pos = 0,
-    true_neg = NA,
-    false_neg = sum(human_results$real == 0))
+# calculate true/false postive/negative results
+human_results <- human_data %>%
+  summarise(
+    type = "human",
+    true_pos = sum(expected == 1 & real == 1),
+    false_pos = sum(expected == 0 & real == 1),
+    true_neg = sum(expected == 0 & real == 0),
+    false_neg = sum(expected == 1 & real == 0)
+    )
 
-human_summary <- human_matrix %>%
+human_summary <- human_results %>%
   summarise(
     type = "human",
     # true positive rate
@@ -263,15 +282,42 @@ human_summary <- human_matrix %>%
     # false positive rate
     precision = true_pos / (true_pos + false_pos),
     # mean search time in minutes
-    time = mean(human_results$search_time_s)/60,
+    time = mean(human_data$search_time_s)/60,
     # sensitivity divided by time, x 100 to be >0
     efficiency  = sensitivity / time * 100
   )
+```
 
-# both results
-results <- rbind(dog_summary, human_summary)
+Combine data and plot outcomes.
 
-results
+```{r}
+# both counts 
+counts <- rbind(dog_results, human_results)
+
+# format for bar plot
+counts2 <- counts %>%
+  pivot_longer(2:5, values_to = "count", names_to = "metric") %>%
+  filter(!count == 0) %>%
+  mutate(name = ifelse(metric == "true_pos", "True positive",
+                       ifelse(metric == "true_neg", "True negative",
+                              "False negative")),
+         type = ifelse(type == "dog", "Dog-handler team", "Human-only")) 
+
+# both performance metrics
+performance <- rbind(dog_summary, human_summary)
+
+# plot
+plot1 <- ggplot(counts2)+
+  geom_bar(aes(x = type, y= count, fill = name),
+           position = "fill", stat = "identity",
+           alpha = 0.5)+
+  geom_text(aes(x = type, y= count, label = name), 
+            position = "fill", stat = "identity",
+            vjust = 2)+
+  scale_fill_manual(values = c("darkorchid", "turquoise4", "forestgreen"), name = "Metric")+
+  theme_classic()+
+  ylab("Proportion of trials")+
+  xlab("Search type")
 ```
 
 ## Time comparison
@@ -280,12 +326,12 @@ Is the dog significantly faster than the human-only searches?
 
 ```{r}
 # combine times dataframe
-dog_time <- dog_results %>%
+dog_time <- dog_data %>%
   filter(type == "PRESENCE") %>%
   select(search_time_s) %>%
   mutate(type = "dog")
 
-human_time <- human_results %>%
+human_time <- human_data %>%
   select(search_time_s) %>%
   mutate(type = "human")
 
@@ -311,16 +357,39 @@ Yes, the dog is significantly faster (p < 0.0001).
 Plot search times.
 
 ```{r}
+# coloured version for poster
+colours <- c("purple4", "seagreen4")
 ggplot(times, aes(type, time/60))+
   geom_boxplot(aes(fill = type), alpha = 0.3, outlier.shape = NA)+
   geom_beeswarm(aes(colour = type), spacing = 1, method = "compactswarm")+
-  scale_fill_manual(values = c("purple4", "seagreen4"), labels = c("Dog", "Human"))+
-  scale_colour_manual(values = c("purple4", "seagreen4"), labels = c("Dog", "Human"))+
+  scale_fill_manual(values = colours)+
+  scale_colour_manual(values = colours)+
+  theme_classic()+
   ylab("Search time (min)")+
   xlab(NULL)+
-  theme_classic()+
-  theme(legend.position="none")
+  theme(legend.position = "none") 
 
-ggsave("search_times.png", height = 6, width = 6, units = "cm", dpi = 600)
+ggsave("search_times_poster.png", height = 6, width = 6, units = "cm", dpi = 600)
+
+# B&W version for paper
+plot2 <- ggplot(times, aes(type, time/60))+
+  geom_boxplot(outlier.shape = NA)+
+  geom_beeswarm(spacing = 2, method = "compactswarm")+
+  theme_classic()+
+  ylab("Search time (min)")+
+  xlab("Search type")+
+  scale_x_discrete(labels = c("Dog-handler team", "Human-only"))
+```
+
+## Figure
+
+Combined plot of performance metric and search time
+
+```{r}
+combined_plot <- plot2 + plot1 + 
+  plot_annotation(tag_levels = 'A')
+combined_plot
+
+ggsave("times & performance.png", height = 10, width = 20, units = "cm", dpi = 300)
 ```
 
