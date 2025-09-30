@@ -13,7 +13,7 @@ output:
     highlight: pygments
 editor_options:
   chunk_output_type: console
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding=encoding, output_file=file.path(dirname(inputFile), 'tutorial.html')) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding=encoding, output_file=file.path(dirname(inputFile), 'results markdown format.html')) })
 ---
 
 ```{r setup, include=FALSE}
@@ -406,7 +406,7 @@ ggplot(times, aes(type, time/60))+
   xlab(NULL)+
   theme(legend.position = "none") 
 
-ggsave("search_times_poster.png", height = 6, width = 6, units = "cm", dpi = 600)
+ggsave("figure for poster.png", height = 6, width = 6, units = "cm", dpi = 600)
 
 # B&W version for paper
 plot2 <- ggplot(times, aes(type, time/60))+
@@ -427,6 +427,6 @@ combined_plot <- plot2 + plot1 +
   plot_annotation(tag_levels = 'A')
 combined_plot
 
-ggsave("times & performance.png", height = 10, width = 20, units = "cm", dpi = 300)
+ggsave("figure for publication.png", height = 10, width = 20, units = "cm", dpi = 300)
 ```
 
